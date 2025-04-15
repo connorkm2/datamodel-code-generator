@@ -314,6 +314,7 @@ class Config(BaseModel):
     keyword_only: bool = False
     no_alias: bool = False
     formatters: list[Formatter] = DEFAULT_FORMATTERS
+    split_by_group: bool = False
 
     def merge_args(self, args: Namespace) -> None:
         set_args = {f: getattr(args, f) for f in self.get_fields() if getattr(args, f) is not None}
@@ -451,78 +452,121 @@ def main(args: Sequence[str] | None = None) -> Exit:  # noqa: PLR0911, PLR0912, 
             )
             return Exit.ERROR
 
+    generate_kwargs = {
+        "output_model_type":config.output_model_type,
+        "target_python_version":config.target_python_version,
+        "base_class":config.base_class,
+        "additional_imports":config.additional_imports,
+        "custom_template_dir":config.custom_template_dir,
+        "validation":config.validation,
+        "field_constraints":config.field_constraints,
+        "snake_case_field":config.snake_case_field,
+        "strip_default_none":config.strip_default_none,
+        "extra_template_data":extra_template_data,
+        "aliases":aliases,
+        "disable_timestamp":config.disable_timestamp,
+        "enable_version_header":config.enable_version_header,
+        "allow_population_by_field_name":config.allow_population_by_field_name,
+        "allow_extra_fields":config.allow_extra_fields,
+        "apply_default_values_for_required_fields":config.use_default,
+        "force_optional_for_required_fields":config.force_optional,
+        "class_name":config.class_name,
+        "use_standard_collections":config.use_standard_collections,
+        "use_schema_description":config.use_schema_description,
+        "use_field_description":config.use_field_description,
+        "use_default_kwarg":config.use_default_kwarg,
+        "reuse_model":config.reuse_model,
+        "encoding":config.encoding,
+        "enum_field_as_literal":config.enum_field_as_literal,
+        "use_one_literal_as_default":config.use_one_literal_as_default,
+        "set_default_enum_member":config.set_default_enum_member,
+        "use_subclass_enum":config.use_subclass_enum,
+        "strict_nullable":config.strict_nullable,
+        "use_generic_container_types":config.use_generic_container_types,
+        "enable_faux_immutability":config.enable_faux_immutability,
+        "disable_appending_item_suffix":config.disable_appending_item_suffix,
+        "strict_types":config.strict_types,
+        "empty_enum_field_name":config.empty_enum_field_name,
+        "field_extra_keys":config.field_extra_keys,
+        "field_include_all_keys":config.field_include_all_keys,
+        "field_extra_keys_without_x_prefix":config.field_extra_keys_without_x_prefix,
+        "openapi_scopes":config.openapi_scopes,
+        "wrap_string_literal":config.wrap_string_literal,
+        "use_title_as_name":config.use_title_as_name,
+        "use_operation_id_as_name":config.use_operation_id_as_name,
+        "use_unique_items_as_set":config.use_unique_items_as_set,
+        "http_headers":config.http_headers,
+        "http_ignore_tls":config.http_ignore_tls,
+        "use_annotated":config.use_annotated,
+        "use_non_positive_negative_number_constrained_types":config.use_non_positive_negative_number_constrained_types,
+        "original_field_name_delimiter":config.original_field_name_delimiter,
+        "use_double_quotes":config.use_double_quotes,
+        "collapse_root_models":config.collapse_root_models,
+        "use_union_operator":config.use_union_operator,
+        "special_field_name_prefix":config.special_field_name_prefix,
+        "remove_special_field_name_prefix":config.remove_special_field_name_prefix,
+        "capitalise_enum_members":config.capitalise_enum_members,
+        "keep_model_order":config.keep_model_order,
+        "custom_file_header":config.custom_file_header,
+        "custom_file_header_path":config.custom_file_header_path,
+        "custom_formatters":config.custom_formatters,
+        "custom_formatters_kwargs":custom_formatters_kwargs,
+        "use_pendulum":config.use_pendulum,
+        "http_query_parameters":config.http_query_parameters,
+        "treat_dot_as_module":config.treat_dot_as_module,
+        "use_exact_imports":config.use_exact_imports,
+        "union_mode":config.union_mode,
+        "output_datetime_class":config.output_datetime_class,
+        "keyword_only":config.keyword_only,
+        "no_alias":config.no_alias,
+        "formatters":config.formatters,
+    }
+
+    ## Begin custom code
+    if getattr(config, "split_by_group", False) and config.input_file_type == InputFileType.OpenAPI:
+        import yaml
+
+        if config.input:
+            with open(config.input, "r", encoding=config.encoding) as f:
+                spec = yaml.safe_load(f)
+        elif config.url:
+            import requests
+            spec = requests.get(config.url.geturl()).json()
+        else:
+            spec = json.loads(sys.stdin.read())
+
+        if not config.output or not config.output.is_dir():
+            print("When using --split-by-group, --output must be a directory.", file=sys.stderr)
+            return Exit.ERROR
+        
+        schemas = spec.get("components", {}).get("schemas", {})
+        groups = {}
+        for name, schema in schemas.items():
+            group = schema.get("x-internal-group", "default")
+            groups.setdefault(group, {})[name] = schema        
+
+        for group, group_schemas in groups.items():
+            group_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": f"{group} models", "version": "1.0"},
+                "paths": {},
+                "components": {"schemas": group_schemas}
+            }
+            output_file = config.output / f"{group}.py"    
+            generate(
+                input_=json.dumps(group_spec),
+                input_file_type=config.input_file_type,
+                output=output_file,
+                **generate_kwargs
+            )
+        return Exit.OK
     try:
+
         generate(
             input_=config.url or config.input or sys.stdin.read(),
             input_file_type=config.input_file_type,
             output=config.output,
-            output_model_type=config.output_model_type,
-            target_python_version=config.target_python_version,
-            base_class=config.base_class,
-            additional_imports=config.additional_imports,
-            custom_template_dir=config.custom_template_dir,
-            validation=config.validation,
-            field_constraints=config.field_constraints,
-            snake_case_field=config.snake_case_field,
-            strip_default_none=config.strip_default_none,
-            extra_template_data=extra_template_data,
-            aliases=aliases,
-            disable_timestamp=config.disable_timestamp,
-            enable_version_header=config.enable_version_header,
-            allow_population_by_field_name=config.allow_population_by_field_name,
-            allow_extra_fields=config.allow_extra_fields,
-            apply_default_values_for_required_fields=config.use_default,
-            force_optional_for_required_fields=config.force_optional,
-            class_name=config.class_name,
-            use_standard_collections=config.use_standard_collections,
-            use_schema_description=config.use_schema_description,
-            use_field_description=config.use_field_description,
-            use_default_kwarg=config.use_default_kwarg,
-            reuse_model=config.reuse_model,
-            encoding=config.encoding,
-            enum_field_as_literal=config.enum_field_as_literal,
-            use_one_literal_as_default=config.use_one_literal_as_default,
-            set_default_enum_member=config.set_default_enum_member,
-            use_subclass_enum=config.use_subclass_enum,
-            strict_nullable=config.strict_nullable,
-            use_generic_container_types=config.use_generic_container_types,
-            enable_faux_immutability=config.enable_faux_immutability,
-            disable_appending_item_suffix=config.disable_appending_item_suffix,
-            strict_types=config.strict_types,
-            empty_enum_field_name=config.empty_enum_field_name,
-            field_extra_keys=config.field_extra_keys,
-            field_include_all_keys=config.field_include_all_keys,
-            field_extra_keys_without_x_prefix=config.field_extra_keys_without_x_prefix,
-            openapi_scopes=config.openapi_scopes,
-            wrap_string_literal=config.wrap_string_literal,
-            use_title_as_name=config.use_title_as_name,
-            use_operation_id_as_name=config.use_operation_id_as_name,
-            use_unique_items_as_set=config.use_unique_items_as_set,
-            http_headers=config.http_headers,
-            http_ignore_tls=config.http_ignore_tls,
-            use_annotated=config.use_annotated,
-            use_non_positive_negative_number_constrained_types=config.use_non_positive_negative_number_constrained_types,
-            original_field_name_delimiter=config.original_field_name_delimiter,
-            use_double_quotes=config.use_double_quotes,
-            collapse_root_models=config.collapse_root_models,
-            use_union_operator=config.use_union_operator,
-            special_field_name_prefix=config.special_field_name_prefix,
-            remove_special_field_name_prefix=config.remove_special_field_name_prefix,
-            capitalise_enum_members=config.capitalise_enum_members,
-            keep_model_order=config.keep_model_order,
-            custom_file_header=config.custom_file_header,
-            custom_file_header_path=config.custom_file_header_path,
-            custom_formatters=config.custom_formatters,
-            custom_formatters_kwargs=custom_formatters_kwargs,
-            use_pendulum=config.use_pendulum,
-            http_query_parameters=config.http_query_parameters,
-            treat_dot_as_module=config.treat_dot_as_module,
-            use_exact_imports=config.use_exact_imports,
-            union_mode=config.union_mode,
-            output_datetime_class=config.output_datetime_class,
-            keyword_only=config.keyword_only,
-            no_alias=config.no_alias,
-            formatters=config.formatters,
+            **generate_kwargs
         )
     except InvalidClassNameError as e:
         print(f"{e} You have to set `--class-name` option", file=sys.stderr)  # noqa: T201

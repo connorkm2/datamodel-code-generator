@@ -489,6 +489,13 @@ openapi_options.add_argument(
     default=None,
 )
 
+openapi_options.add_argument(
+    '--split-by-group',
+    help='Split generated models into files based on x-internal-group OpenAPI extension',
+    action='store_true',
+    default=None
+)
+
 # ======================================================================================
 # General options
 # ======================================================================================
