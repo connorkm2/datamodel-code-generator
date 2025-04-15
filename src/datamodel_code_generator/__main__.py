@@ -565,7 +565,7 @@ def main(args: Sequence[str] | None = None) -> Exit:  # noqa: PLR0911, PLR0912, 
             output_dir = config.output / relative_path
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            output_file = output_dir / f"{group}.models.py"
+            output_file = output_dir / f"models_{group}.py"
             generate(
                 input_=json.dumps(group_spec),
                 input_file_type=config.input_file_type,
