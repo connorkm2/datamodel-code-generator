@@ -525,6 +525,7 @@ def main(args: Sequence[str] | None = None) -> Exit:  # noqa: PLR0911, PLR0912, 
     ## Begin custom code
     if getattr(config, "split_by_group", False) and config.input_file_type == InputFileType.OpenAPI:
         import yaml
+        from pathlib import Path
 
         if config.input:
             with open(config.input, "r", encoding=config.encoding) as f:
@@ -540,19 +541,32 @@ def main(args: Sequence[str] | None = None) -> Exit:  # noqa: PLR0911, PLR0912, 
             return Exit.ERROR
         
         schemas = spec.get("components", {}).get("schemas", {})
-        groups = {}
-        for name, schema in schemas.items():
-            group = schema.get("x-internal-group", "default")
-            groups.setdefault(group, {})[name] = schema        
+        group_map = {}
 
-        for group, group_schemas in groups.items():
+        for name, schema in schemas.items():
+            group = schema.get("x-internal-group", "shared")
+            path_override = schema.get("x-internal-path")
+
+            if group == "shared" or not path_override:
+                relative_path = Path("_shared")
+            else:
+                relative_path = Path(path_override)
+
+
+            group_map.setdefault((group, relative_path), {})[name] = schema
+
+        for (group, relative_path), group_schemas in group_map.items():
             group_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": f"{group} models", "version": "1.0"},
                 "paths": {},
                 "components": {"schemas": group_schemas}
             }
-            output_file = config.output / f"{group}.py"    
+
+            output_dir = config.output / relative_path
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            output_file = output_dir / f"{group}.models.py"
             generate(
                 input_=json.dumps(group_spec),
                 input_file_type=config.input_file_type,
