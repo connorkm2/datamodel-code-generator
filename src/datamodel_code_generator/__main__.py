@@ -525,7 +525,6 @@ def main(args: Sequence[str] | None = None) -> Exit:  # noqa: PLR0911, PLR0912, 
     ## Begin custom code
     if getattr(config, "split_by_group", False) and config.input_file_type == InputFileType.OpenAPI:
         import yaml
-        from pathlib import Path
 
         if config.input:
             with open(config.input, "r", encoding=config.encoding) as f:
